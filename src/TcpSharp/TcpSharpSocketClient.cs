@@ -216,14 +216,26 @@ public class TcpSharpSocketClient
         this._recvBuffer = new byte[ReceiveBufferSize];
         this._sendBuffer = new byte[SendBufferSize];
 
-        // Get Host IP Address that is used to establish a connection  
-        // In this case, we get one IP address of localhost that is IP : 127.0.0.1  
-        // If a host has multiple addresses, you will get a list of addresses  
-        var serverIPHost = Dns.GetHostEntry(Host);
-        if (serverIPHost.AddressList.Length == 0) throw new Exception("Unable to solve host address");
-        var serverIPAddress = serverIPHost.AddressList[0];
-        if (serverIPAddress.ToString() == "::1") serverIPAddress = new IPAddress(16777343); // 127.0.0.1
-        var serverIPEndPoint = new IPEndPoint(serverIPAddress, Port);
+        IPEndPoint serverIPEndPoint;
+        IPAddress serverIPAddress;
+        if (IPAddress.TryParse(Host, out serverIPAddress))
+        {
+            // Host is an IP Address, use it directly
+            serverIPEndPoint = new IPEndPoint(serverIPAddress, Port);
+            this._socket = new Socket(serverIPAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        }
+        else
+        {
+            // Host is a hostname, resolve it to an IP Address
+            var serverIPHost = Dns.GetHostEntry(Host);
+            if (serverIPHost.AddressList.Length == 0) throw new Exception("Unable to solve host address");
+            serverIPAddress = serverIPHost.AddressList[0];
+            if (serverIPAddress.ToString() == "::1") serverIPAddress = new IPAddress(16777343); // 127.0.0.1
+            serverIPEndPoint = new IPEndPoint(serverIPAddress, Port);
+
+            // Create a TCP/IP socket
+            this._socket = new Socket(serverIPAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        }
 
         // Create a TCP/IP  socket.    
         this._socket = new Socket(serverIPAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -416,6 +428,12 @@ public class TcpSharpSocketClient
         {
             while (!_cancellationToken.IsCancellationRequested)
             {
+                if (_socket.Poll(1000, SelectMode.SelectRead) && _socket.Available == 0)
+                {
+                    // Connection has been closed, this likely means the server closed the connection. We call Disconnect to clean up and notify the client.
+                    Disconnect(DisconnectReason.None);
+                    return;
+                }
                 // Receive the response from the remote device.    
                 var bytesCount = _socket.Receive(_recvBuffer);
                 if (bytesCount > 0)
@@ -461,6 +479,11 @@ public class TcpSharpSocketClient
 
     private void Disconnect(DisconnectReason reason)
     {
+        // If already disconnected, no need to do this again.
+        if (!Connected) 
+        {
+            return;
+        }
         try
         {
             // Stop Receiver Task
@@ -482,7 +505,6 @@ public class TcpSharpSocketClient
             _socket.Dispose();
         }
         catch { }
-
         // Invoke OnDisconnected
         this.InvokeOnDisconnected(new OnClientDisconnectedEventArgs());
 
