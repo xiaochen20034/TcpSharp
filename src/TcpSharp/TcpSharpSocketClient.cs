@@ -871,6 +871,7 @@ public class TcpSharpSocketClient<TPacketStruct>
                 var bytesCount = _socket.Receive(_recvBuffer);
                 
                 if (bytesCount <= 0) continue;
+                BytesReceived += bytesCount;
                 if (!this.AcceptData) continue;
                 
                 accuBuffer.AddRange(_recvBuffer.Take(bytesCount));

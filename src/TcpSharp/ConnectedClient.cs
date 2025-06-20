@@ -206,9 +206,9 @@ public class ConnectedClient<TPacketStruct>
             while (!this._cancellationToken.IsCancellationRequested && (bytesCount = await stream.ReadAsync(buffer, 0, buffer.Length, this._cancellationToken)) != 0)
             {
                 // Increase BytesReceived
+                if (bytesCount <= 0) continue;
                 BytesReceived += bytesCount;
                 this._server.AddReceivedBytes(bytesCount);
-                if (bytesCount <= 0) continue;
                 if (!this.AcceptData) continue;
                 
                 accuBuffer.AddRange(buffer.Take(bytesCount));
