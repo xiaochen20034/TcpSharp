@@ -8,9 +8,9 @@
 	<PropertyGroup>
 		<PackageId>Xyli.TcpSharp</PackageId>
 		<Authors>Xyliteee</Authors>
-		<FileVersion>1.3.8.1</FileVersion>
-		<PackageVersion>1.3.8.1</PackageVersion>
-		<AssemblyVersion>1.3.8.1</AssemblyVersion>
+		<FileVersion>1.3.9</FileVersion>
+		<PackageVersion>1.3.9</PackageVersion>
+		<AssemblyVersion>1.3.9</AssemblyVersion>
 		<Description>This package is an updated version of TcpSharp, originally developed by burakoner.</Description>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 		<PackageTags>TcpSharp;Net;TCP;Socket;Client;Server</PackageTags>
@@ -25,7 +25,8 @@
 		<RepositoryUrl>https://github.com/xyliteee/TcpSharp</RepositoryUrl>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<Title>Xyli.TcpSharp</Title>
-		<Version>1.3.8.1</Version>
+		<Version>1.3.9</Version>
+		<VersionSuffix>beta</VersionSuffix>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -34,6 +35,10 @@
 
 	<ItemGroup>
 		<None Include="README.md" Pack="True" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Modules\" />
 	</ItemGroup>
 
 </Project>

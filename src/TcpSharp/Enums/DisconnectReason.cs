@@ -1,4 +1,4 @@
-﻿namespace TcpSharp;
+﻿namespace TcpSharp.Enums;
 
 public enum DisconnectReason : byte
 {

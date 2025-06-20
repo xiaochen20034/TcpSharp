@@ -8,3 +8,4 @@ global using System.Net.Sockets;
 global using System.Text;
 global using System.Threading;
 global using System.Threading.Tasks;
+global using TcpSharp.Enums;

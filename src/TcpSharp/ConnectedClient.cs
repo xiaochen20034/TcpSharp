@@ -157,3 +157,104 @@ public class ConnectedClient
     }
 
 }
+
+public class ConnectedClient<TPacketStruct>
+{
+    /* Public Properties */
+    public TcpClient Client { get; internal set; }
+    public string ConnectionId { get; internal set; }
+    public bool Connected { get { return this.Client != null && this.Client.Connected; } }
+    public bool AcceptData { get; internal set; } = true;
+    public long BytesReceived { get; private set; }
+    public long BytesSent { get; private set; }
+
+    /* Reference Fields */
+    private readonly TcpSharpSocketServer<TPacketStruct> _server;
+
+    /* Private Fields */
+    private readonly CancellationTokenSource _cancellationTokenSource;
+    private readonly CancellationToken _cancellationToken;
+
+    internal ConnectedClient(TcpSharpSocketServer<TPacketStruct> server, TcpClient client, string connectionId)
+    {
+        this.Client = client;
+        this.ConnectionId = connectionId;
+
+        this._server = server;
+        this._cancellationTokenSource = new CancellationTokenSource();
+        this._cancellationToken = this._cancellationTokenSource.Token;
+    }
+
+    internal void StartReceiving()
+    {
+        Task.Factory.StartNew(ReceivingTask, TaskCreationOptions.LongRunning);
+    }
+
+    internal void StopReceiving()
+    {
+        this._cancellationTokenSource.Cancel();
+    }
+
+    private async Task ReceivingTask()
+    {
+        var stream = this.Client.GetStream();
+        var buffer = new byte[this.Client.ReceiveBufferSize];
+        try
+        {
+            var bytesCount = 0;
+            List<byte> accuBuffer = [];
+            while (!this._cancellationToken.IsCancellationRequested && (bytesCount = await stream.ReadAsync(buffer, 0, buffer.Length, this._cancellationToken)) != 0)
+            {
+                // Increase BytesReceived
+                BytesReceived += bytesCount;
+                this._server.AddReceivedBytes(bytesCount);
+                if (bytesCount <= 0) continue;
+                if (!this.AcceptData) continue;
+                
+                accuBuffer.AddRange(buffer.Take(bytesCount));
+                while (accuBuffer.Count >= _server.PacketController.HeaderLength)
+                {
+                    var headerData = accuBuffer.Take(_server.PacketController.HeaderLength).ToArray();
+                    var bodyLength = _server.PacketController.ReturnBodyLength(headerData);
+
+                    if (accuBuffer.Count >= _server.PacketController.HeaderLength + bodyLength)
+                    {
+                        var packetData = accuBuffer.Take(_server.PacketController.HeaderLength + bodyLength).ToArray();
+                        var packet = _server.PacketController.Deserialize(packetData);
+                        _server.InvokeOnDataReceived(new OnServerDataReceivedEventArgs<TPacketStruct> { Packet = packet });
+                        accuBuffer.RemoveRange(0, _server.PacketController.HeaderLength + bodyLength);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            // If we exit the loop, it means the client has closed the connection
+            this._server.Disconnect(this.ConnectionId, DisconnectReason.None);
+        }
+        catch (IOException)
+        {
+            // Disconnect
+            this._server.Disconnect(this.ConnectionId, DisconnectReason.Exception);
+        }
+        catch (Exception ex)
+        {
+            // Invoke OnError
+            this._server.InvokeOnError(new OnServerErrorEventArgs
+            {
+                Client = this.Client,
+                ConnectionId = this.ConnectionId,
+                Exception = ex
+            });
+
+            // Disconnect
+            this._server.Disconnect(this.ConnectionId, DisconnectReason.Exception);
+        }
+    }
+
+    public long SendPacket(TPacketStruct packet)
+    {
+        return !this.Connected ? 0 : this.Client.Client.Send(_server.PacketController.Serialize(packet));
+    }
+}
