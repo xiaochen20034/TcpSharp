@@ -157,3 +157,104 @@ public class ConnectedClient
     }
 
 }
+
+public class ConnectedClient<TPackageStruct>
+{
+    /* Public Properties */
+    public TcpClient Client { get; internal set; }
+    public string ConnectionId { get; internal set; }
+    public bool Connected { get { return this.Client != null && this.Client.Connected; } }
+    public bool AcceptData { get; internal set; } = true;
+    public long BytesReceived { get; private set; }
+    public long BytesSent { get; private set; }
+
+    /* Reference Fields */
+    private readonly TcpSharpSocketServer<TPackageStruct> _server;
+
+    /* Private Fields */
+    private readonly CancellationTokenSource _cancellationTokenSource;
+    private readonly CancellationToken _cancellationToken;
+
+    internal ConnectedClient(TcpSharpSocketServer<TPackageStruct> server, TcpClient client, string connectionId)
+    {
+        this.Client = client;
+        this.ConnectionId = connectionId;
+
+        this._server = server;
+        this._cancellationTokenSource = new CancellationTokenSource();
+        this._cancellationToken = this._cancellationTokenSource.Token;
+    }
+
+    internal void StartReceiving()
+    {
+        Task.Factory.StartNew(ReceivingTask, TaskCreationOptions.LongRunning);
+    }
+
+    internal void StopReceiving()
+    {
+        this._cancellationTokenSource.Cancel();
+    }
+
+    private async Task ReceivingTask()
+    {
+        var stream = this.Client.GetStream();
+        var buffer = new byte[this.Client.ReceiveBufferSize];
+        try
+        {
+            var bytesCount = 0;
+            List<byte> accuBuffer = [];
+            while (!this._cancellationToken.IsCancellationRequested && (bytesCount = await stream.ReadAsync(buffer, 0, buffer.Length, this._cancellationToken)) != 0)
+            {
+                // Increase BytesReceived
+                BytesReceived += bytesCount;
+                this._server.AddReceivedBytes(bytesCount);
+                if (bytesCount <= 0) continue;
+                if (!this.AcceptData) continue;
+                
+                accuBuffer.AddRange(buffer.Take(bytesCount));
+                while (accuBuffer.Count >= _server.PackageController.HeaderLength)
+                {
+                    var headerData = accuBuffer.Take(_server.PackageController.HeaderLength).ToArray();
+                    var bodyLength = _server.PackageController.ReturnBodyLength(headerData);
+
+                    if (accuBuffer.Count >= _server.PackageController.HeaderLength + bodyLength)
+                    {
+                        var packageData = accuBuffer.Take(_server.PackageController.HeaderLength + bodyLength).ToArray();
+                        var package = _server.PackageController.Deserialize(packageData);
+                        _server.InvokeOnDataReceived(new OnServerDataReceivedEventArgs<TPackageStruct> { Package = package });
+                        accuBuffer.RemoveRange(0, _server.PackageController.HeaderLength + bodyLength);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            // If we exit the loop, it means the client has closed the connection
+            this._server.Disconnect(this.ConnectionId, DisconnectReason.None);
+        }
+        catch (IOException)
+        {
+            // Disconnect
+            this._server.Disconnect(this.ConnectionId, DisconnectReason.Exception);
+        }
+        catch (Exception ex)
+        {
+            // Invoke OnError
+            this._server.InvokeOnError(new OnServerErrorEventArgs
+            {
+                Client = this.Client,
+                ConnectionId = this.ConnectionId,
+                Exception = ex
+            });
+
+            // Disconnect
+            this._server.Disconnect(this.ConnectionId, DisconnectReason.Exception);
+        }
+    }
+
+    public long SendPackage(TPackageStruct package)
+    {
+        return !this.Connected ? 0 : this.Client.Client.Send(_server.PackageController.Serialize(package));
+    }
+}
