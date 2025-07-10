@@ -1,4 +1,5 @@
-﻿using TcpSharp.Interface;
+﻿using System.Net.Sockets;
+using TcpSharp.Interface;
 
 namespace TcpSharp;
 public class TcpSharpSocketClient
@@ -873,7 +874,15 @@ public class TcpSharpSocketClient<TPacketStruct>
                 if (bytesCount <= 0) continue;
                 BytesReceived += bytesCount;
                 if (!this.AcceptData) continue;
-                
+                if (_packetController.HeaderLength == 0)
+                {
+                    var bytes = new byte[bytesCount];
+                    Array.Copy(_recvBuffer, bytes, bytesCount);
+                    var packet = _packetController.Deserialize(bytes);
+                    InvokeOnDataReceived(new OnClientDataReceivedEventArgs<TPacketStruct> { Packet = packet });
+                    continue;
+                }
+
                 accuBuffer.AddRange(_recvBuffer.Take(bytesCount));
                 while (accuBuffer.Count >= _packetController.HeaderLength)
                 {
